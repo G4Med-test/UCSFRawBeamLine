@@ -1,0 +1,21 @@
+#
+# macro file for UCSF raw beamline 
+#
+/control/verbose 0
+/run/verbose 0
+
+/UCSFRawBeam/Geometry/ScatteringFoil/SetThickness theThickness um 
+
+/run/numberOfThreads 12              
+/UCSFRawBeam/PhysicsList/AddPhysics  theModel #proton_em_standard_opt4
+/UCSFRawBeam/PhysicsList/CutForRegion/BeamPlug 0.02 mm
+/UCSFRawBeam/PhysicsList/CutForRegion/WaterPhantom 0.05 mm
+
+/run/initialize
+
+/analysis/setFileName results/theName_theModel
+/analysis/h1/set 1 1000 0.05  50.0 mm 
+
+/run/printProgress 50000
+/run/beamOn 500000
+

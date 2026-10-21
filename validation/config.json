@@ -1,3 +1,6 @@
 {
-  "macros": ["example.mac"]
+  "macros": [
+    "thinFoil.mac",
+    "thickFoil.mac"
+  ]
 }

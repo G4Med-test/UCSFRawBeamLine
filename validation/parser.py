@@ -1,75 +1,88 @@
-"""Turns the output of one validation run into plots for the Geant Validation Portal.
+#!/usr/bin/env python
 
-The CI imports this file and calls two functions, once for every macro listed in
-validation/config.json:
+# UCSFRawBeamLine portal parser: metadata() reads the macro, parse() the
+# "h1" depth-dose histogram written to the ROOT file named by the macro's
+# own /analysis/setFileName.
+#
+# Ported from geant-config-generator/tests/geant4/UCSFRawBeamLine/parser.py
+# (gts.BaseParser + PyROOT, merging repeated-seed jobs) to the module-level
+# metadata()/parse() API expected by ci-workflows/validation/export.py,
+# reading ROOT with uproot (no PyROOT on the runner, no job-group merge:
+# one macro now means one run, so the original's `/ njobs` rescaling is a
+# no-op here and is dropped).
+import os
 
-1. metadata(commands)  BEFORE the simulation: describe the run from its macro.
-2. parse(job)          AFTER the simulation: read the output files, return plots.
+from geantval import getJSON, one_command, single_run
 
-You only have to edit the lines marked TODO. Example with macro/example.mac:
-
-    commands = [("/myapp/phys/addPhysics", "FTFP_BERT"), ("/run/initialize", ""),
-                ("/gun/particle", "proton"), ("/gun/energy", "100 MeV"), ...]
-
-    metadata(commands) -> {"TEST": "MyTest", "PHYSICS_LIST": "FTFP_BERT",
-                           "PARTICLE": "proton", "ENERGY": 100.0}
-
-    job = that dict + {"path": "<directory of the run>", "VERSION": "11.3.2"}
-    parse(job) -> one plot per `yield`
-
-The run directory contains the files your application wrote with relative names
-(here result.txt) and the captured standard output (test_stdout.txt).
-
-Helpers from ci-workflows/validation/geantval.py:
-- one_command(commands, "/cmd"): value of a command that appears exactly once
-  (error if missing or repeated, so the metadata always matches the macro);
-- energy_mev("100 MeV"): energy in MeV;
-- getJSON(job, ...): builds one plot in the portal format (see parse below).
-"""
-from pathlib import Path
-
-from geantval import energy_mev, getJSON, one_command
+# Beam energy (67.5 MeV) is hardcoded in PrimaryGeneratorAction.cc, not
+# configurable from the macro.
+BEAM_ENERGY_MEV = 67.5
+BEAM_PARTICLE = "proton"
 
 
 def metadata(commands):
-    """Describe one run, reading every setting from its macro.
+    single_run(commands)
+    filename = one_command(commands, "/analysis/setFileName")
+    thickness, unit = one_command(commands, "/UCSFRawBeam/Geometry/ScatteringFoil/SetThickness").split()
+    return {"TEST": "UCSFRawBeamLine",
+            "MODEL": one_command(commands, "/UCSFRawBeam/PhysicsList/AddPhysics"),
+            "THICKNESS": thickness, "THICKNESS_UNIT": unit,
+            "OUTPUT": filename if filename.endswith(".root") else filename + ".root"}
 
-    The returned dict must contain "TEST" (the test name shown on the portal);
-    add whatever parse() needs. Raise an error if the macro is not suitable.
-    """
-    return {
-        "TEST": "MyTest",  # TODO: your test name
-        "PHYSICS_LIST": one_command(commands, "/myapp/phys/addPhysics"),  # TODO: your command
-        "PARTICLE": one_command(commands, "/gun/particle"),
-        "ENERGY": energy_mev(one_command(commands, "/gun/energy")),
-    }
+
+def read_h1(path):
+    import uproot
+
+    with uproot.open(path) as root:
+        hist = root["h1"]
+        edges = hist.axis().edges(flow=False).tolist()
+        values = hist.values(flow=False).tolist()
+        errors = hist.errors(flow=False).tolist()
+    return edges[:-1], edges[1:], values, errors
 
 
 def parse(job):
-    """Read the output of the run in job["path"] and yield one plot per `yield`."""
-    # TODO: read your output file. This example expects two columns, x and y,
-    # one point per line; lines starting with # are comments.
-    x, y = [], []
-    for line in (Path(job["path"]) / "result.txt").read_text().splitlines():
-        if line.strip() and not line.startswith("#"):
-            x_value, y_value = line.split()
-            x.append(float(x_value))
-            y.append(float(y_value))
+    filename = os.path.join(job["path"], job["OUTPUT"])
+    binEdgeLow, binEdgeHigh, binContent, binErrors = read_h1(filename)
 
-    # "chart" is a set of points (x, y). For a histogram use "histogram" with
-    # binEdgeLow, binEdgeHigh and binContent instead of xValues and yValues.
-    # Optional uncertainties: yStatErrorsPlus/Minus, ySysErrorsPlus/Minus.
-    yield getJSON(
-        job, "chart",
-        mctool_name="GEANT4",
-        mctool_model=job["PHYSICS_LIST"],
-        observableName="TODO observable",  # e.g. "attenuation coefficient"
-        targetName="TODO target",          # e.g. "water"
-        beamParticle=job["PARTICLE"],
-        beamEnergies=[job["ENERGY"]],      # MeV
-        title="TODO title",
-        xAxisName="TODO x, unit",
-        yAxisName="TODO y, unit",
-        xValues=x,
-        yValues=y,
-    )
+    parameters = [{"names": "thickness", "values": "%s %s" % (job["THICKNESS"], job["THICKNESS_UNIT"])}]
+
+    yield getJSON(job, "histogram",
+                  mctool_name="GEANT4",
+                  mctool_model=job["MODEL"],
+                  observableName="energy deposition",
+                  targetName="water",
+                  beamParticle=BEAM_PARTICLE,
+                  beamEnergies=[BEAM_ENERGY_MEV],
+                  secondaryParticle="None",
+                  title="Energy deposit at depth",
+                  xAxisName="water, mm",
+                  yAxisName="1/N",
+                  binEdgeLow=binEdgeLow,
+                  binEdgeHigh=binEdgeHigh,
+                  binContent=binContent,
+                  parameters=parameters,
+                  yStatErrorsPlus=binErrors,
+                  yStatErrorsMinus=binErrors)
+
+    ymax = max(binContent)
+    normalized = [v / ymax * 100. for v in binContent]
+    normalizedErrors = [e / ymax * 100. for e in binErrors]
+
+    yield getJSON(job, "histogram",
+                  mctool_name="GEANT4",
+                  mctool_model=job["MODEL"],
+                  observableName="energy deposition (normalized)",
+                  targetName="water",
+                  beamParticle=BEAM_PARTICLE,
+                  beamEnergies=[BEAM_ENERGY_MEV],
+                  secondaryParticle="None",
+                  title="Energy deposit at depth",
+                  xAxisName="water, mm",
+                  yAxisName="normalized dose (%)",
+                  binEdgeLow=binEdgeLow,
+                  binEdgeHigh=binEdgeHigh,
+                  binContent=normalized,
+                  parameters=parameters,
+                  yStatErrorsPlus=normalizedErrors,
+                  yStatErrorsMinus=normalizedErrors)

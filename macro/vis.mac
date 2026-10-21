@@ -1,0 +1,35 @@
+#
+/control/verbose 0
+/run/verbose 0
+
+/UCSFRawBeam/Geometry/ScatteringFoil/SetThickness 101.6 um
+
+/run/numberOfThreads 1
+/UCSFRawBeam/PhysicsList/AddPhysics  proton_em_standard_opt4
+/UCSFRawBeam/PhysicsList/CutForRegion/BeamPlug 0.02 mm
+/UCSFRawBeam/PhysicsList/CutForRegion/WaterPhantom 0.05 mm
+
+
+/run/initialize
+
+/vis/open OGL 900x600-0+0
+
+/vis/viewer/set/autoRefresh false
+/vis/verbose errors
+
+/vis/drawVolume
+
+/vis/viewer/set/viewpointThetaPhi 90. 0. deg
+/vis/viewer/zoom 1.4
+
+/vis/scene/add/trajectories smooth
+/vis/modeling/trajectories/create/drawByCharge
+/vis/modeling/trajectories/drawByCharge-0/default/setDrawStepPts true
+/vis/modeling/trajectories/drawByCharge-0/default/setStepPtsSize 1
+
+/vis/scene/endOfEventAction accumulate
+
+/vis/viewer/set/autoRefresh true
+/vis/verbose warnings
+
+/run/beamOn 1

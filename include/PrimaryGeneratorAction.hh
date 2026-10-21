@@ -1,0 +1,35 @@
+#ifndef PrimaryGeneratorAction_h
+#define PrimaryGeneratorAction_h 1
+
+#include "G4VUserPrimaryGeneratorAction.hh"
+#include "G4ParticleGun.hh"
+#include "globals.hh"
+
+class G4Event;
+
+//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+
+class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
+{
+public:
+    PrimaryGeneratorAction();
+    ~PrimaryGeneratorAction();
+    
+public:
+    virtual void GeneratePrimaries(G4Event*);
+    G4ParticleGun* GetParticleGun() {return fParticleGun;};
+    
+private:
+    G4ParticleGun*         fParticleGun;
+    G4double                fEnergy;
+    G4double                fSpread;
+    G4double                fBeamX;
+    G4double                fBeamY;
+    G4double                fPosZ;
+};
+
+//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+
+#endif
+
+
